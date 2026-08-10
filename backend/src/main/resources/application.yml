@@ -1,0 +1,73 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: monthly-challenge-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/monthlychallenge
+    username: ${DB_USERNAME:mc_user}
+    password: ${DB_PASSWORD:mc_password}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate          # Flyway manages schema — never let Hibernate alter it
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        default_schema: public
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/monthly-challenge}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8180/realms/monthly-challenge/protocol/openid-connect/certs}
+
+keycloak:
+  realm: monthly-challenge
+  auth-server-url: ${KEYCLOAK_URL:http://localhost:8180}
+  client-id: ${KEYCLOAK_CLIENT_ID:monthly-challenge-backend}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET:change-me}
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  notification:
+    firebase:
+      credentials-path: ${FIREBASE_CREDENTIALS_PATH:firebase-service-account.json}
+  scheduler:
+    # Cron for end-of-day job: runs at 23:59 every day in the system default timezone
+    end-of-day-cron: "0 59 23 * * *"
+    timezone: ${APP_TIMEZONE:UTC}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    oauth2-redirect-url: /swagger-ui/oauth2-redirect.html
+  api-docs:
+    path: /api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    com.monthlychallenge: DEBUG
+    org.springframework.security: INFO

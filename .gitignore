@@ -1,0 +1,18 @@
+# React / Node
+node_modules/
+dist/
+build/
+.env
+.env.*
+
+# Spring Boot / Java
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# macOS
+.DS_Store
