@@ -1,5 +1,7 @@
 package com.monthlychallenge.infrastructure.exception;
 
+import com.monthlychallenge.domain.exceptions.BusinessException;
+import com.monthlychallenge.domain.exceptions.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;

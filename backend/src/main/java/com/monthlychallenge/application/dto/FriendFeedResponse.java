@@ -1,12 +1,11 @@
 package com.monthlychallenge.application.dto;
 
-import com.monthlychallenge.domain.models.Challenge;
-import com.monthlychallenge.domain.models.CheckIn;
+import com.monthlychallenge.domain.enums.CheckInStatus;
 
 import java.util.List;
 import java.util.UUID;
 
-public record FriendFeedEntry(
+public record FriendFeedResponse(
         UUID friendUserId,
         String username,
         String displayName,
@@ -15,7 +14,7 @@ public record FriendFeedEntry(
         int totalSharedChallenges,
         int completedToday,
         int halfCompletedToday,
-        List<ChallengeWithCheckIn> sharedChallenges
+        List<FriendChallengeEntry> sharedChallenges
 ) {
-    public record ChallengeWithCheckIn(Challenge challenge, CheckIn todaysCheckIn) {}
+    public record FriendChallengeEntry(UUID challengeId, String title, CheckInStatus status) {}
 }

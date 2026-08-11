@@ -1,6 +1,8 @@
 package com.monthlychallenge.domain.service;
 
-import com.monthlychallenge.domain.model.*;
+import com.monthlychallenge.domain.models.*;
+import com.monthlychallenge.domain.enums.DayResult;
+import com.monthlychallenge.domain.enums.CheckInStatus;
 
 import java.time.LocalDate;
 import java.util.List;
