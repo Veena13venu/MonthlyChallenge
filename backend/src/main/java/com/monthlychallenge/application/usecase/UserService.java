@@ -1,8 +1,12 @@
 package com.monthlychallenge.application.usecase;
 
-import com.monthlychallenge.adapter.out.persistence.user.UserJpaEntity;
-import com.monthlychallenge.adapter.out.persistence.user.UserJpaRepository;
+import com.monthlychallenge.application.ports.in.UserUseCase;
+import com.monthlychallenge.application.ports.in.command.UpdateMinimumTargetCommand;
+import com.monthlychallenge.application.ports.in.command.UpdateProfileCommand;
+import com.monthlychallenge.application.ports.out.UserRepository;
 import com.monthlychallenge.domain.exceptions.ResourceNotFoundException;
+import com.monthlychallenge.domain.models.MinimumDailyTarget;
+import com.monthlychallenge.domain.models.User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,66 +16,69 @@ import java.util.UUID;
 
 @Service
 @Transactional
-public class UserService {
+public class UserService implements UserUseCase {
 
-    private final UserJpaRepository userRepo;
+    private final UserRepository userRepository;
 
-    public UserService(UserJpaRepository userRepo) {
-        this.userRepo = userRepo;
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
     }
 
-    /** Creates a new user on first login, or returns the existing one. */
-    public UserJpaEntity provisionUser(String keycloakId, String email, String preferredUsername) {
-        return userRepo.findByKeycloakId(keycloakId).orElseGet(() -> {
+    @Override
+    public User provisionUserFromKeycloak(String keycloakId, String email, String preferredUsername) {
+        return userRepository.findByKeycloakId(keycloakId).orElseGet(() -> {
             String username = resolveUniqueUsername(preferredUsername);
-            UserJpaEntity user = new UserJpaEntity();
-            user.setId(UUID.randomUUID());
-            user.setKeycloakId(keycloakId);
-            user.setEmail(email);
-            user.setUsername(username);
-            user.setDisplayName(preferredUsername);
-            user.setMinimumTargetValue(1.0);
-            user.setMinimumTargetIsPercentage(false);
-            user.setCreatedAt(Instant.now());
-            user.setUpdatedAt(Instant.now());
-            return userRepo.save(user);
+            User user = User.builder()
+                    .id(UUID.randomUUID())
+                    .keycloakId(keycloakId)
+                    .email(email)
+                    .username(username)
+                    .displayName(preferredUsername)
+                    .minimumDailyTarget(new MinimumDailyTarget(1.0, false))
+                    .createdAt(Instant.now())
+                    .updatedAt(Instant.now())
+                    .build();
+            return userRepository.save(user);
         });
     }
 
+    @Override
     @Transactional(readOnly = true)
-    public UserJpaEntity getMyProfile(UUID userId) {
-        return userRepo.findById(userId)
+    public User getMyProfile(UUID userId) {
+        return userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    public UserJpaEntity updateProfile(UUID userId, String displayName, String profilePhotoUrl) {
-        UserJpaEntity user = getMyProfile(userId);
-        if (displayName != null) user.setDisplayName(displayName);
-        if (profilePhotoUrl != null) user.setProfilePhotoUrl(profilePhotoUrl);
+    @Override
+    public User updateProfile(UUID userId, UpdateProfileCommand command) {
+        User user = getMyProfile(userId);
+        if (command.displayName() != null) user.setDisplayName(command.displayName());
+        if (command.profilePhotoUrl() != null) user.setProfilePhotoUrl(command.profilePhotoUrl());
         user.setUpdatedAt(Instant.now());
-        return userRepo.save(user);
+        return userRepository.save(user);
     }
 
-    public UserJpaEntity updateMinimumTarget(UUID userId, double value, boolean isPercentage) {
-        UserJpaEntity user = getMyProfile(userId);
-        user.setMinimumTargetValue(value);
-        user.setMinimumTargetIsPercentage(isPercentage);
+    @Override
+    public User updateMinimumDailyTarget(UUID userId, UpdateMinimumTargetCommand command) {
+        User user = getMyProfile(userId);
+        user.setMinimumDailyTarget(new MinimumDailyTarget(command.value(), command.isPercentage()));
         user.setUpdatedAt(Instant.now());
-        return userRepo.save(user);
+        return userRepository.save(user);
     }
 
+    @Override
     @Transactional(readOnly = true)
-    public List<UserJpaEntity> searchByUsername(String query, UUID excludeId) {
-        return userRepo.searchByUsernameStartingWith(query.toLowerCase(), excludeId);
+    public List<User> searchByUsername(String usernameQuery, UUID excludeUserId) {
+        return userRepository.searchByUsernameStartingWith(usernameQuery.toLowerCase(), excludeUserId);
     }
 
     private String resolveUniqueUsername(String preferred) {
         if (preferred == null || preferred.isBlank()) preferred = "user";
         String base = preferred.toLowerCase().replaceAll("[^a-z0-9_]", "_");
-        if (!userRepo.existsByUsername(base)) return base;
+        if (!userRepository.existsByUsername(base)) return base;
         for (int i = 1; i <= 99; i++) {
             String candidate = base + i;
-            if (!userRepo.existsByUsername(candidate)) return candidate;
+            if (!userRepository.existsByUsername(candidate)) return candidate;
         }
         return base + UUID.randomUUID().toString().substring(0, 6);
     }

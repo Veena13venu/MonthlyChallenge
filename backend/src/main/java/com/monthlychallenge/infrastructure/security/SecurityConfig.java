@@ -25,11 +25,6 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
 
-    /**
-     * Configures the app as an OAuth2 Resource Server validating JWTs issued by Keycloak.
-     * All /api/v1/** endpoints require a valid bearer token.
-     * Swagger UI and actuator health are publicly accessible.
-     */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -40,6 +35,8 @@ public class SecurityConfig {
                 // Public endpoints
                 .requestMatchers("/swagger-ui/**", "/api-docs/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
+                // Internal Keycloak webhook — secured by X-Hook-Secret header, not JWT
+                .requestMatchers("/v1/internal/keycloak/**").permitAll()
                 // Everything else requires authentication
                 .anyRequest().authenticated()
             )
@@ -49,11 +46,6 @@ public class SecurityConfig {
 
         return http.build();
     }
-
-    /**
-     * Maps Keycloak realm roles from the JWT to Spring Security GrantedAuthorities.
-     * Roles arrive under: realm_access.roles[] in the Keycloak JWT.
-     */
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();

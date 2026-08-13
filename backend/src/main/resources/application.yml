@@ -8,7 +8,7 @@ spring:
     name: monthly-challenge-backend
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/monthlychallenge
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/monthlychallenge
     username: ${DB_USERNAME:mc_user}
     password: ${DB_PASSWORD:mc_password}
     driver-class-name: org.postgresql.Driver
@@ -26,6 +26,7 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    baseline-version: 0
 
   security:
     oauth2:
@@ -43,6 +44,10 @@ keycloak:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  keycloak:
+    # Shared secret that Keycloak sends in the X-Hook-Secret header on the registration webhook.
+    # Must match the value configured in Keycloak's HTTP Event Listener settings.
+    hook-secret: ${KEYCLOAK_HOOK_SECRET:dev-hook-secret-change-in-production}
   notification:
     firebase:
       credentials-path: ${FIREBASE_CREDENTIALS_PATH:firebase-service-account.json}

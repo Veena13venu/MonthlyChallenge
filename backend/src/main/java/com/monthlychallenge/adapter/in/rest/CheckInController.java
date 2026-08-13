@@ -1,13 +1,12 @@
 package com.monthlychallenge.adapter.in.rest;
 
 import com.monthlychallenge.adapter.in.rest.dto.request.RecordCheckInRequest;
-import com.monthlychallenge.adapter.out.persistence.checkin.CheckInJpaEntity;
+import com.monthlychallenge.adapter.in.rest.mapper.CheckInWebMapper;
 import com.monthlychallenge.application.dto.CheckInResponse;
 import com.monthlychallenge.application.dto.DaySummaryResponse;
-import com.monthlychallenge.application.usecase.CheckInService;
-import com.monthlychallenge.application.usecase.UserService;
-import com.monthlychallenge.domain.enums.CheckInStatus;
-import com.monthlychallenge.domain.models.DaySummary;
+import com.monthlychallenge.application.ports.in.CheckInUseCase;
+import com.monthlychallenge.application.ports.in.UserUseCase;
+import com.monthlychallenge.application.ports.in.command.RecordCheckInCommand;
 import com.monthlychallenge.infrastructure.security.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,12 +26,16 @@ import java.util.UUID;
 @Tag(name = "Check-ins", description = "Daily check-in recording and progress")
 public class CheckInController {
 
-    private final CheckInService checkInService;
-    private final UserService userService;
+    private final CheckInUseCase checkInUseCase;
+    private final UserUseCase userUseCase;
+    private final CheckInWebMapper mapper;
 
-    public CheckInController(CheckInService checkInService, UserService userService) {
-        this.checkInService = checkInService;
-        this.userService = userService;
+    public CheckInController(CheckInUseCase checkInUseCase,
+                              UserUseCase userUseCase,
+                              CheckInWebMapper mapper) {
+        this.checkInUseCase = checkInUseCase;
+        this.userUseCase = userUseCase;
+        this.mapper = mapper;
     }
 
     @PostMapping
@@ -41,9 +44,8 @@ public class CheckInController {
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody RecordCheckInRequest req) {
         UUID userId = userId(jwt);
-        CheckInJpaEntity ci = checkInService.recordCheckIn(
-                userId, req.getChallengeId(), req.getStatus(), req.getActualValue());
-        return ResponseEntity.ok(toResponse(ci));
+        return ResponseEntity.ok(mapper.toResponse(checkInUseCase.recordCheckIn(userId,
+                new RecordCheckInCommand(req.getChallengeId(), req.getStatus(), req.getActualValue()))));
     }
 
     @GetMapping
@@ -51,8 +53,8 @@ public class CheckInController {
     public ResponseEntity<List<CheckInResponse>> getForDate(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return ResponseEntity.ok(checkInService.getCheckInsForDate(userId(jwt), date)
-                .stream().map(this::toResponse).toList());
+        return ResponseEntity.ok(checkInUseCase.getCheckInsForDate(userId(jwt), date)
+                .stream().map(mapper::toResponse).toList());
     }
 
     @GetMapping("/summary")
@@ -62,18 +64,13 @@ public class CheckInController {
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         LocalDate target = date != null ? date : LocalDate.now();
-        DaySummary ds = checkInService.getLiveDaySummary(userId(jwt), target);
-        return ResponseEntity.ok(new DaySummaryResponse(
-                ds.getDate(), ds.getTotalPoints(), ds.getMinimumThreshold(), ds.getResult()));
+        return ResponseEntity.ok(mapper.toDaySummaryResponse(
+                checkInUseCase.getLiveDaySummary(userId(jwt), target)));
     }
 
     private UUID userId(Jwt jwt) {
         AuthenticatedUser auth = AuthenticatedUser.from(jwt);
-        return userService.provisionUser(auth.keycloakId(), auth.email(), auth.preferredUsername()).getId();
-    }
-
-    private CheckInResponse toResponse(CheckInJpaEntity ci) {
-        return new CheckInResponse(ci.getId(), ci.getChallengeId(), ci.getDate(),
-                CheckInStatus.valueOf(ci.getStatus()), ci.getActualValue(), ci.getPointValue());
+        return userUseCase.provisionUserFromKeycloak(
+                auth.keycloakId(), auth.email(), auth.preferredUsername()).getId();
     }
 }

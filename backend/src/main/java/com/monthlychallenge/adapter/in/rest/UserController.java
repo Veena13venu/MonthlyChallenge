@@ -2,9 +2,12 @@ package com.monthlychallenge.adapter.in.rest;
 
 import com.monthlychallenge.adapter.in.rest.dto.request.UpdateMinimumTargetRequest;
 import com.monthlychallenge.adapter.in.rest.dto.request.UpdateProfileRequest;
-import com.monthlychallenge.adapter.out.persistence.user.UserJpaEntity;
+import com.monthlychallenge.adapter.in.rest.mapper.UserWebMapper;
 import com.monthlychallenge.application.dto.UserResponse;
-import com.monthlychallenge.application.usecase.UserService;
+import com.monthlychallenge.application.ports.in.UserUseCase;
+import com.monthlychallenge.application.ports.in.command.UpdateMinimumTargetCommand;
+import com.monthlychallenge.application.ports.in.command.UpdateProfileCommand;
+import com.monthlychallenge.domain.models.User;
 import com.monthlychallenge.infrastructure.security.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,17 +24,19 @@ import java.util.List;
 @Tag(name = "Users", description = "User profile management")
 public class UserController {
 
-    private final UserService userService;
+    private final UserUseCase userUseCase;
+    private final UserWebMapper mapper;
 
-    public UserController(UserService userService) {
-        this.userService = userService;
+    public UserController(UserUseCase userUseCase, UserWebMapper mapper) {
+        this.userUseCase = userUseCase;
+        this.mapper = mapper;
     }
 
     @GetMapping("/me")
     @Operation(summary = "Get my profile")
     public ResponseEntity<UserResponse> getMyProfile(@AuthenticationPrincipal Jwt jwt) {
-        UserJpaEntity user = provision(jwt);
-        return ResponseEntity.ok(toResponse(user));
+        User user = provision(jwt);
+        return ResponseEntity.ok(mapper.toResponse(user));
     }
 
     @PutMapping("/me/profile")
@@ -39,9 +44,10 @@ public class UserController {
     public ResponseEntity<UserResponse> updateProfile(
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody UpdateProfileRequest req) {
-        UserJpaEntity user = provision(jwt);
-        UserJpaEntity updated = userService.updateProfile(user.getId(), req.getDisplayName(), req.getProfilePhotoUrl());
-        return ResponseEntity.ok(toResponse(updated));
+        User user = provision(jwt);
+        User updated = userUseCase.updateProfile(user.getId(),
+                new UpdateProfileCommand(req.getDisplayName(), req.getProfilePhotoUrl()));
+        return ResponseEntity.ok(mapper.toResponse(updated));
     }
 
     @PutMapping("/me/minimum-target")
@@ -49,9 +55,10 @@ public class UserController {
     public ResponseEntity<UserResponse> updateMinimumTarget(
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody UpdateMinimumTargetRequest req) {
-        UserJpaEntity user = provision(jwt);
-        UserJpaEntity updated = userService.updateMinimumTarget(user.getId(), req.getValue(), req.isPercentage());
-        return ResponseEntity.ok(toResponse(updated));
+        User user = provision(jwt);
+        User updated = userUseCase.updateMinimumDailyTarget(user.getId(),
+                new UpdateMinimumTargetCommand(req.getValue(), req.isPercentage()));
+        return ResponseEntity.ok(mapper.toResponse(updated));
     }
 
     @GetMapping("/search")
@@ -59,18 +66,14 @@ public class UserController {
     public ResponseEntity<List<UserResponse>> search(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam String q) {
-        UserJpaEntity me = provision(jwt);
-        return ResponseEntity.ok(userService.searchByUsername(q, me.getId())
-                .stream().map(this::toResponse).toList());
+        User me = provision(jwt);
+        return ResponseEntity.ok(userUseCase.searchByUsername(q, me.getId())
+                .stream().map(mapper::toResponse).toList());
     }
 
-    private UserJpaEntity provision(Jwt jwt) {
+    private User provision(Jwt jwt) {
         AuthenticatedUser auth = AuthenticatedUser.from(jwt);
-        return userService.provisionUser(auth.keycloakId(), auth.email(), auth.preferredUsername());
-    }
-
-    private UserResponse toResponse(UserJpaEntity u) {
-        return new UserResponse(u.getId(), u.getUsername(), u.getDisplayName(), u.getEmail(),
-                u.getProfilePhotoUrl(), u.getMinimumTargetValue(), u.isMinimumTargetIsPercentage());
+        return userUseCase.provisionUserFromKeycloak(
+                auth.keycloakId(), auth.email(), auth.preferredUsername());
     }
 }

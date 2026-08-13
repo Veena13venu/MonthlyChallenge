@@ -1,10 +1,16 @@
 package com.monthlychallenge.application.usecase;
 
-import com.monthlychallenge.adapter.in.rest.dto.request.CreateChallengeRequest;
-import com.monthlychallenge.adapter.in.rest.dto.request.UpdateChallengeRequest;
-import com.monthlychallenge.adapter.out.persistence.challenge.ChallengeJpaEntity;
-import com.monthlychallenge.adapter.out.persistence.challenge.ChallengeJpaRepository;
+import com.monthlychallenge.application.ports.in.ChallengeUseCase;
+import com.monthlychallenge.application.ports.in.command.CreateChallengeCommand;
+import com.monthlychallenge.application.ports.in.command.UpdateChallengeCommand;
+import com.monthlychallenge.application.ports.out.ChallengeRepository;
+import com.monthlychallenge.domain.enums.ChallengeCategory;
+import com.monthlychallenge.domain.enums.ChallengeFrequency;
+import com.monthlychallenge.domain.enums.ChallengeVisibility;
 import com.monthlychallenge.domain.exceptions.ResourceNotFoundException;
+import com.monthlychallenge.domain.models.Challenge;
+import com.monthlychallenge.domain.models.ChallengeTarget;
+import com.monthlychallenge.domain.models.ChallengeTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,125 +19,125 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @Transactional
-public class ChallengeService {
+public class ChallengeService implements ChallengeUseCase {
 
-    private final ChallengeJpaRepository challengeRepo;
+    private final ChallengeRepository challengeRepository;
 
-    public ChallengeService(ChallengeJpaRepository challengeRepo) {
-        this.challengeRepo = challengeRepo;
+    public ChallengeService(ChallengeRepository challengeRepository) {
+        this.challengeRepository = challengeRepository;
     }
 
-    public ChallengeJpaEntity createChallenge(UUID userId, CreateChallengeRequest req) {
-        ChallengeJpaEntity c = new ChallengeJpaEntity();
-        c.setId(UUID.randomUUID());
-        c.setOwnerId(userId);
-        c.setTitle(req.getTitle());
-        c.setDescription(req.getDescription());
-        c.setCategory(req.getCategory() != null ? req.getCategory().name() : null);
-        c.setFrequency(req.getFrequency() != null ? req.getFrequency().name() : null);
-        c.setMonth(req.getMonth() != null ? req.getMonth().toString() : YearMonth.now().toString());
-        c.setVisibility(req.getVisibility() != null ? req.getVisibility().name() : "SHARED");
-
-        String targetStr = null;
-        if (req.getTargetValue() != null) {
-            targetStr = req.getTargetUnit() != null && !req.getTargetUnit().isBlank()
-                    ? req.getTargetValue() + ":" + req.getTargetUnit()
-                    : String.valueOf(req.getTargetValue());
-        }
-        c.setTargetValue(targetStr);
-
-        c.setReminderHour(req.getReminderHour());
-        c.setReminderMinute(req.getReminderMinute());
-        c.setWeeklyDueDays(req.getWeeklyDueDays() != null ? req.getWeeklyDueDays().stream().map(Enum::name).collect(Collectors.joining(",")) : null);
-        c.setMonthlyDueDay(req.getMonthlyDueDay());
-        c.setActive(true);
-        c.setCreatedAt(Instant.now());
-        c.setUpdatedAt(Instant.now());
-        return challengeRepo.save(c);
+    @Override
+    public Challenge createChallenge(UUID userId, CreateChallengeCommand cmd) {
+        Challenge c = Challenge.builder()
+                .id(UUID.randomUUID())
+                .ownerId(userId)
+                .title(cmd.title())
+                .description(cmd.description())
+                .category(cmd.category())
+                .frequency(cmd.frequency())
+                .target(cmd.target())
+                .month(cmd.month() != null ? cmd.month() : YearMonth.now())
+                .visibility(cmd.visibility() != null ? cmd.visibility() : ChallengeVisibility.SHARED)
+                .reminderHour(cmd.reminderHour())
+                .reminderMinute(cmd.reminderMinute())
+                .weeklyDueDays(cmd.weeklyDueDays())
+                .monthlyDueDay(cmd.monthlyDueDay())
+                .active(true)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        return challengeRepository.save(c);
     }
 
-    public ChallengeJpaEntity updateChallenge(UUID userId, UUID challengeId, UpdateChallengeRequest req) {
-        ChallengeJpaEntity c = challengeRepo.findByIdAndOwnerIdAndActiveTrue(challengeId, userId)
+    @Override
+    public Challenge updateChallenge(UUID userId, UUID challengeId, UpdateChallengeCommand cmd) {
+        Challenge existing = challengeRepository.findByIdAndOwnerId(challengeId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Challenge not found"));
-        if (req.getTitle() != null)       c.setTitle(req.getTitle());
-        if (req.getDescription() != null) c.setDescription(req.getDescription());
-        if (req.getCategory() != null)    c.setCategory(req.getCategory().name());
-        if (req.getVisibility() != null)  c.setVisibility(req.getVisibility().name());
-
-        if (req.getTargetValue() != null) {
-            String targetStr = req.getTargetUnit() != null && !req.getTargetUnit().isBlank()
-                    ? req.getTargetValue() + ":" + req.getTargetUnit()
-                    : String.valueOf(req.getTargetValue());
-            c.setTargetValue(targetStr);
-        }
-
-        if (req.getReminderHour() != null)   c.setReminderHour(req.getReminderHour());
-        if (req.getReminderMinute() != null) c.setReminderMinute(req.getReminderMinute());
-        if (req.getWeeklyDueDays() != null)  c.setWeeklyDueDays(req.getWeeklyDueDays().stream().map(Enum::name).collect(Collectors.joining(",")));
-        if (req.getMonthlyDueDay() != null)  c.setMonthlyDueDay(req.getMonthlyDueDay());
-        c.setUpdatedAt(Instant.now());
-        return challengeRepo.save(c);
+        if (cmd.title() != null)       existing.setTitle(cmd.title());
+        if (cmd.description() != null) existing.setDescription(cmd.description());
+        if (cmd.category() != null)    existing.setCategory(cmd.category());
+        if (cmd.target() != null)      existing.setTarget(cmd.target());
+        if (cmd.visibility() != null)  existing.setVisibility(cmd.visibility());
+        if (cmd.reminderHour() != null)   existing.setReminderHour(cmd.reminderHour());
+        if (cmd.reminderMinute() != null) existing.setReminderMinute(cmd.reminderMinute());
+        if (cmd.weeklyDueDays() != null)  existing.setWeeklyDueDays(cmd.weeklyDueDays());
+        if (cmd.monthlyDueDay() != null)  existing.setMonthlyDueDay(cmd.monthlyDueDay());
+        existing.setUpdatedAt(Instant.now());
+        return challengeRepository.save(existing);
     }
 
+    @Override
     public void deleteChallenge(UUID userId, UUID challengeId) {
-        ChallengeJpaEntity c = challengeRepo.findByIdAndOwnerIdAndActiveTrue(challengeId, userId)
+        Challenge existing = challengeRepository.findByIdAndOwnerId(challengeId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Challenge not found"));
-        c.setActive(false);
-        c.setUpdatedAt(Instant.now());
-        challengeRepo.save(c);
+        existing.setActive(false);
+        existing.setUpdatedAt(Instant.now());
+        challengeRepository.save(existing);
     }
 
+    @Override
     @Transactional(readOnly = true)
-    public List<ChallengeJpaEntity> getChallengesForMonth(UUID userId, String month) {
-        return challengeRepo.findByOwnerIdAndMonthAndActiveTrue(userId, month);
+    public List<Challenge> getChallengesForMonth(UUID userId, YearMonth month) {
+        return challengeRepository.findActiveByOwnerIdAndMonth(userId, month);
     }
 
+    @Override
     @Transactional(readOnly = true)
-    public List<ChallengeJpaEntity> getTodaysChallenges(UUID userId) {
+    public List<Challenge> getTodaysChallenges(UUID userId) {
         LocalDate today = LocalDate.now();
-        String month = YearMonth.from(today).toString();
-        return challengeRepo.findByOwnerIdAndMonthAndActiveTrue(userId, month)
+        return challengeRepository.findActiveByOwnerIdAndMonth(userId, YearMonth.from(today))
                 .stream()
-                .filter(c -> isDueToday(c, today))
+                .filter(c -> c.isDueOnDay(today.getDayOfMonth(), today.getDayOfWeek()))
                 .toList();
     }
 
-    public List<ChallengeJpaEntity> rolloverChallenges(UUID userId, String fromMonth, String toMonth) {
-        return challengeRepo.findByOwnerIdAndMonthAndActiveTrue(userId, fromMonth).stream()
-                .map(c -> {
-                    ChallengeJpaEntity copy = new ChallengeJpaEntity();
-                    copy.setId(UUID.randomUUID());
-                    copy.setOwnerId(c.getOwnerId());
-                    copy.setTitle(c.getTitle());
-                    copy.setDescription(c.getDescription());
-                    copy.setCategory(c.getCategory());
-                    copy.setFrequency(c.getFrequency());
-                    copy.setTargetValue(c.getTargetValue());
-                    copy.setMonth(toMonth);
-                    copy.setVisibility(c.getVisibility());
-                    copy.setReminderHour(c.getReminderHour());
-                    copy.setReminderMinute(c.getReminderMinute());
-                    copy.setWeeklyDueDays(c.getWeeklyDueDays());
-                    copy.setMonthlyDueDay(c.getMonthlyDueDay());
-                    copy.setActive(true);
-                    copy.setCreatedAt(Instant.now());
-                    copy.setUpdatedAt(Instant.now());
-                    return challengeRepo.save(copy);
-                }).toList();
+    @Override
+    public List<Challenge> rolloverChallenges(UUID userId, YearMonth fromMonth, YearMonth toMonth) {
+        return challengeRepository.findActiveByOwnerIdAndMonth(userId, fromMonth).stream()
+                .map(c -> challengeRepository.save(Challenge.builder()
+                        .id(UUID.randomUUID())
+                        .ownerId(c.getOwnerId())
+                        .title(c.getTitle())
+                        .description(c.getDescription())
+                        .category(c.getCategory())
+                        .frequency(c.getFrequency())
+                        .target(c.getTarget())
+                        .month(toMonth)
+                        .visibility(c.getVisibility())
+                        .reminderHour(c.getReminderHour())
+                        .reminderMinute(c.getReminderMinute())
+                        .weeklyDueDays(c.getWeeklyDueDays())
+                        .monthlyDueDay(c.getMonthlyDueDay())
+                        .active(true)
+                        .createdAt(Instant.now())
+                        .updatedAt(Instant.now())
+                        .build()))
+                .toList();
     }
 
-    private boolean isDueToday(ChallengeJpaEntity c, LocalDate today) {
-        return switch (c.getFrequency()) {
-            case "DAILY"   -> true;
-            case "WEEKLY"  -> c.getWeeklyDueDays() != null &&
-                              c.getWeeklyDueDays().contains(today.getDayOfWeek().name());
-            case "MONTHLY" -> c.getMonthlyDueDay() != null &&
-                              c.getMonthlyDueDay() == today.getDayOfMonth();
-            default        -> false;
-        };
+    @Override
+    @Transactional(readOnly = true)
+    public List<ChallengeTemplate> getChallengeTemplates() {
+        return List.of(
+                tpl("Drink 3L Water",    ChallengeCategory.HEALTH,       ChallengeFrequency.DAILY, 3.0,  "Litres"),
+                tpl("Sleep 7 Hours",     ChallengeCategory.SLEEP,        ChallengeFrequency.DAILY, 7.0,  "hours"),
+                tpl("Walk 5 km",         ChallengeCategory.FITNESS,      ChallengeFrequency.DAILY, 5.0,  "km"),
+                tpl("Read 10 Pages",     ChallengeCategory.LEARNING,     ChallengeFrequency.DAILY, 10.0, "pages"),
+                tpl("Meditate 10 min",   ChallengeCategory.MINDFULNESS,  ChallengeFrequency.DAILY, 10.0, "minutes"),
+                tpl("Exercise 30 min",   ChallengeCategory.FITNESS,      ChallengeFrequency.DAILY, 30.0, "minutes"),
+                tpl("No Junk Food",      ChallengeCategory.NUTRITION,    ChallengeFrequency.DAILY, null, null)
+        );
+    }
+
+    private ChallengeTemplate tpl(String title, ChallengeCategory cat, ChallengeFrequency freq,
+                                   Double val, String unit) {
+        return ChallengeTemplate.builder().id(UUID.randomUUID()).title(title).category(cat)
+                .suggestedFrequency(freq)
+                .suggestedTarget(val != null ? new ChallengeTarget(val, unit) : null)
+                .build();
     }
 }

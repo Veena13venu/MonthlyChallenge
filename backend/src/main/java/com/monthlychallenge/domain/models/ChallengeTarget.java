@@ -10,6 +10,11 @@ public final class ChallengeTarget {
         this.unit = unit;
     }
 
-    public double getValue() { return value; }
-    public String getUnit()  { return unit; }
+    public double getValue() {
+        return value;
+    }
+
+    public String getUnit() {
+        return unit;
+    }
 }

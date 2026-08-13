@@ -1,6 +1,7 @@
 package com.monthlychallenge.adapter.in.rest;
 
-import com.monthlychallenge.application.usecase.UserService;
+import com.monthlychallenge.application.ports.in.UserUseCase;
+import com.monthlychallenge.application.ports.out.NotificationPort;
 import com.monthlychallenge.infrastructure.security.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -11,24 +12,30 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/v1/device-tokens")
 @Tag(name = "Device Tokens", description = "Push notification token registration")
 public class DeviceTokenController {
 
-    private final UserService userService;
+    private final NotificationPort notificationPort;
+    private final UserUseCase userUseCase;
 
-    public DeviceTokenController(UserService userService) {
-        this.userService = userService;
+    public DeviceTokenController(NotificationPort notificationPort, UserUseCase userUseCase) {
+        this.notificationPort = notificationPort;
+        this.userUseCase = userUseCase;
     }
 
     @PostMapping
-    @Operation(summary = "Register device token")
+    @Operation(summary = "Register or refresh the device token for push notifications")
     public ResponseEntity<Void> register(
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody RegisterTokenRequest request) {
         AuthenticatedUser auth = AuthenticatedUser.from(jwt);
-        userService.provisionUser(auth.keycloakId(), auth.email(), auth.preferredUsername());
+        UUID userId = userUseCase.provisionUserFromKeycloak(
+                auth.keycloakId(), auth.email(), auth.preferredUsername()).getId();
+        notificationPort.registerDeviceToken(userId, request.fcmToken());
         return ResponseEntity.noContent().build();
     }
 

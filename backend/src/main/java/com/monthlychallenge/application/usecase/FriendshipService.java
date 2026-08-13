@@ -1,12 +1,13 @@
 package com.monthlychallenge.application.usecase;
 
-import com.monthlychallenge.adapter.out.persistence.friendship.FriendshipJpaEntity;
-import com.monthlychallenge.adapter.out.persistence.friendship.FriendshipJpaRepository;
-import com.monthlychallenge.adapter.out.persistence.user.UserJpaRepository;
+import com.monthlychallenge.application.ports.in.FriendshipUseCase;
+import com.monthlychallenge.application.ports.out.FriendshipRepository;
+import com.monthlychallenge.application.ports.out.NotificationPort;
+import com.monthlychallenge.application.ports.out.UserRepository;
 import com.monthlychallenge.domain.enums.FriendshipStatus;
 import com.monthlychallenge.domain.exceptions.BusinessException;
 import com.monthlychallenge.domain.exceptions.ResourceNotFoundException;
-import com.monthlychallenge.infrastructure.notification.NotificationService;
+import com.monthlychallenge.domain.models.Friendship;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,104 +17,112 @@ import java.util.UUID;
 
 @Service
 @Transactional
-public class FriendshipService {
+public class FriendshipService implements FriendshipUseCase {
 
-    private final FriendshipJpaRepository friendshipRepo;
-    private final UserJpaRepository userRepo;
-    private final NotificationService notificationService;
+    private final FriendshipRepository friendshipRepository;
+    private final UserRepository userRepository;
+    private final NotificationPort notificationPort;
 
-    public FriendshipService(FriendshipJpaRepository friendshipRepo,
-                              UserJpaRepository userRepo,
-                              NotificationService notificationService) {
-        this.friendshipRepo = friendshipRepo;
-        this.userRepo = userRepo;
-        this.notificationService = notificationService;
+    public FriendshipService(FriendshipRepository friendshipRepository,
+                              UserRepository userRepository,
+                              NotificationPort notificationPort) {
+        this.friendshipRepository = friendshipRepository;
+        this.userRepository = userRepository;
+        this.notificationPort = notificationPort;
     }
 
-    public FriendshipJpaEntity sendFriendRequest(UUID requesterId, UUID addresseeId) {
+    @Override
+    public Friendship sendFriendRequest(UUID requesterId, UUID addresseeId) {
         if (requesterId.equals(addresseeId))
             throw new BusinessException("Cannot send friend request to yourself");
 
-        userRepo.findById(addresseeId)
+        userRepository.findById(addresseeId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        friendshipRepo.findBetween(requesterId, addresseeId).ifPresent(f -> {
+        friendshipRepository.findBetween(requesterId, addresseeId).ifPresent(f -> {
             throw new BusinessException("A friend request or friendship already exists");
         });
 
-        var requester = userRepo.findById(requesterId)
+        var requester = userRepository.findById(requesterId)
                 .orElseThrow(() -> new ResourceNotFoundException("Requester not found"));
 
-        FriendshipJpaEntity f = friendshipRepo.findBetweenAnyStatus(requesterId, addresseeId)
-                .orElseGet(() -> {
-                    FriendshipJpaEntity entity = new FriendshipJpaEntity();
-                    entity.setId(UUID.randomUUID());
-                    entity.setRequesterId(requesterId);
-                    entity.setAddresseeId(addresseeId);
-                    entity.setCreatedAt(Instant.now());
-                    return entity;
-                });
+        Friendship friendship = friendshipRepository.findBetweenAnyStatus(requesterId, addresseeId)
+                .map(existing -> {
+                    existing.setStatus(FriendshipStatus.PENDING);
+                    existing.setUpdatedAt(Instant.now());
+                    return existing;
+                })
+                .orElseGet(() -> Friendship.builder()
+                        .id(UUID.randomUUID())
+                        .requesterId(requesterId)
+                        .addresseeId(addresseeId)
+                        .status(FriendshipStatus.PENDING)
+                        .createdAt(Instant.now())
+                        .updatedAt(Instant.now())
+                        .build());
 
-        f.setStatus(FriendshipStatus.PENDING.name());
-        f.setUpdatedAt(Instant.now());
-        FriendshipJpaEntity saved = friendshipRepo.save(f);
-
-        notificationService.sendFriendRequestNotification(addresseeId, requester.getUsername());
+        Friendship saved = friendshipRepository.save(friendship);
+        notificationPort.sendFriendRequestNotification(addresseeId, requester.getUsername());
         return saved;
     }
 
-    public FriendshipJpaEntity acceptFriendRequest(UUID addresseeId, UUID friendshipId) {
-        FriendshipJpaEntity f = friendshipRepo.findById(friendshipId)
+    @Override
+    public Friendship acceptFriendRequest(UUID addresseeId, UUID friendshipId) {
+        Friendship friendship = friendshipRepository.findById(friendshipId)
                 .orElseThrow(() -> new ResourceNotFoundException("Friend request not found"));
 
-        if (!f.getAddresseeId().equals(addresseeId))
+        if (!friendship.getAddresseeId().equals(addresseeId))
             throw new BusinessException("Not authorised to accept this request");
 
-        if (!FriendshipStatus.PENDING.name().equals(f.getStatus()))
+        if (friendship.getStatus() != FriendshipStatus.PENDING)
             throw new BusinessException("Request is not in PENDING state");
 
-        var acceptor = userRepo.findById(addresseeId)
+        var acceptor = userRepository.findById(addresseeId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        f.setStatus(FriendshipStatus.ACCEPTED.name());
-        f.setUpdatedAt(Instant.now());
-        FriendshipJpaEntity saved = friendshipRepo.save(f);
+        friendship.setStatus(FriendshipStatus.ACCEPTED);
+        friendship.setUpdatedAt(Instant.now());
+        Friendship saved = friendshipRepository.save(friendship);
 
-        notificationService.sendFriendRequestAcceptedNotification(f.getRequesterId(), acceptor.getUsername());
+        notificationPort.sendFriendRequestAcceptedNotification(friendship.getRequesterId(), acceptor.getUsername());
         return saved;
     }
 
+    @Override
     public void declineFriendRequest(UUID addresseeId, UUID friendshipId) {
-        FriendshipJpaEntity f = friendshipRepo.findById(friendshipId)
+        Friendship friendship = friendshipRepository.findById(friendshipId)
                 .orElseThrow(() -> new ResourceNotFoundException("Friend request not found"));
 
-        if (!f.getAddresseeId().equals(addresseeId))
+        if (!friendship.getAddresseeId().equals(addresseeId))
             throw new BusinessException("Not authorised to decline this request");
 
-        f.setStatus(FriendshipStatus.DECLINED.name());
-        f.setUpdatedAt(Instant.now());
-        friendshipRepo.save(f);
+        friendship.setStatus(FriendshipStatus.DECLINED);
+        friendship.setUpdatedAt(Instant.now());
+        friendshipRepository.save(friendship);
     }
 
+    @Override
     public void removeFriend(UUID userId, UUID friendshipId) {
-        FriendshipJpaEntity f = friendshipRepo.findById(friendshipId)
+        Friendship friendship = friendshipRepository.findById(friendshipId)
                 .orElseThrow(() -> new ResourceNotFoundException("Friendship not found"));
 
-        if (!f.getRequesterId().equals(userId) && !f.getAddresseeId().equals(userId))
+        if (!friendship.involves(userId))
             throw new BusinessException("Not part of this friendship");
 
-        f.setStatus(FriendshipStatus.DECLINED.name());
-        f.setUpdatedAt(Instant.now());
-        friendshipRepo.save(f);
+        friendship.setStatus(FriendshipStatus.DECLINED);
+        friendship.setUpdatedAt(Instant.now());
+        friendshipRepository.save(friendship);
     }
 
+    @Override
     @Transactional(readOnly = true)
-    public List<FriendshipJpaEntity> getAcceptedFriends(UUID userId) {
-        return friendshipRepo.findAcceptedFriends(userId);
+    public List<Friendship> getAcceptedFriends(UUID userId) {
+        return friendshipRepository.findAcceptedFriends(userId);
     }
 
+    @Override
     @Transactional(readOnly = true)
-    public List<FriendshipJpaEntity> getPendingRequests(UUID userId) {
-        return friendshipRepo.findByUserIdAndStatus(userId, FriendshipStatus.PENDING.name());
+    public List<Friendship> getPendingRequests(UUID userId) {
+        return friendshipRepository.findByUserIdAndStatus(userId, FriendshipStatus.PENDING);
     }
 }
